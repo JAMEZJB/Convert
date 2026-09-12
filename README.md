@@ -1,3 +1,9 @@
+<!-- REPACKAGE-NOTICE (added by the fork maintainer; re-apply if an upstream merge removes it) -->
+> **📦 Repackaging notice — not original work.** This is a fork of [p2r3/convert](https://github.com/p2r3/convert), maintained by **James Breedon** solely to build it as a standalone desktop app for the JBTheatreTools launcher. **All credit to the original authors;** the app is **unmodified except for packaging** and licensed **GPL-2.0**. See [`NOTICE.md`](NOTICE.md). Original project: <https://convert.to.it> · <https://github.com/p2r3/convert>.
+>
+> *The original project's README follows.*
+<!-- /REPACKAGE-NOTICE -->
+
 # [Convert to it!](https://convert.to.it/)
 
 **Truly universal online file converter.**

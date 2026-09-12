@@ -1,0 +1,82 @@
+# Desktop build — repackages this fork's upstream (p2r3/convert) as a standalone Electron app
+# for the JBTheatreTools launcher, tracking upstream on a COST-CAPPED schedule.
+#
+# Cost control (macOS runners are billed heavily):
+#   * runs fortnightly (1st + 15th) or on manual dispatch — never on every push;
+#   * a cheap Ubuntu `check` job first asks whether upstream p2r3/convert has actually moved since the
+#     last build; the expensive mac/windows build jobs run ONLY when it has (`if: needs.check.outputs.changed`).
+#   * so a quiet fortnight costs one tiny API check and nothing else.
+#
+# Output assets follow the launcher convention: convert-macOS.zip + convert-Windows-x64.exe (arm64 optional).
+# The release is published UNSIGNED here; the maintainer signs its SHA256SUMS separately (offline key).
+name: Desktop build (tracks upstream)
+
+on:
+  schedule:
+    - cron: '0 6 1,15 * *'   # 1st & 15th of the month, ~06:00 UTC — fortnightly cap
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-build
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: has upstream moved?
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.cmp.outputs.changed }}
+      upstream_sha: ${{ steps.cmp.outputs.upstream_sha }}
+    steps:
+      - id: cmp
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          up="$(gh api repos/p2r3/convert/commits/master --jq '.sha')"
+          echo "upstream_sha=$up" >> "$GITHUB_OUTPUT"
+          # the last built upstream sha is recorded in the latest release body marker "built-from: <sha>"
+          last="$(gh api repos/${{ github.repository }}/releases/latest --jq '.body' 2>/dev/null | sed -n 's/.*built-from: \([0-9a-f]\{7,\}\).*/\1/p' | head -1)"
+          if [ "${up:0:12}" = "${last:0:12}" ] && [ -n "$last" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "upstream unchanged ($up) — skipping the build"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "upstream moved to $up (last built: ${last:-none}) — building"
+          fi
+
+  # TODO(convert dev session): fill the build steps. Frame + cost-gate are set; keep them.
+  build-macos:
+    name: build-macos
+    needs: check
+    if: ${{ needs.check.outputs.changed == 'true' }}
+    runs-on: macos-14          # Apple Silicon; electron-builder can emit a UNIVERSAL mac zip from one runner (cost)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }   # upstream requires submodules
+      # TODO: install Bun; bun install; bun run desktop:dist:mac (prefer a universal target);
+      #       rename electron-builder output → convert-macOS.zip; upload-artifact.
+
+  build-windows:
+    name: build-windows-x64
+    needs: check
+    if: ${{ needs.check.outputs.changed == 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { submodules: recursive }
+      # TODO: install Bun; bun install; bun run desktop:dist:win;
+      #       rename electron-builder output → convert-Windows-x64.exe; upload-artifact.
+
+  release:
+    name: publish (unsigned)
+    needs: [check, build-macos, build-windows]
+    if: ${{ needs.check.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { path: artifacts }
+      # TODO: collect convert-*.{zip,exe} → flat/, sha256sum -- * > SHA256SUMS,
+      #       publish a release tagged by date (e.g. build-YYYYMMDD) whose body includes
+      #       "built-from: ${{ needs.check.outputs.upstream_sha }}" (the marker the check job reads).
+      #       The maintainer signs SHA256SUMS offline afterwards (SHA256SUMS.minisig).
