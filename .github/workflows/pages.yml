@@ -1,9 +1,10 @@
 name: Publish to GitHub Pages
 
+# NOTE (fork maintainer): upstream's GitHub Pages deploy. Neutralised to manual-dispatch only in this
+# REPACKAGING fork — this fork ships a desktop app via `desktop-build.yml`, it does not host the site
+# (the live site is the original project's, at https://convert.to.it). Kept to preserve upstream parity.
 on:
-  push:
-    branches: ["master"]
-  pull_request:
+  workflow_dispatch: {}
 
 permissions:
   contents: read

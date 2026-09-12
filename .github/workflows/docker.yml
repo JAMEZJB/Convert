@@ -1,9 +1,12 @@
 name: Publish Docker Image
 
+# NOTE (fork maintainer): upstream's container publish. Neutralised to manual-dispatch only in this
+# REPACKAGING fork. Its original `tags: ["*"]` trigger would fire on the `build-YYYYMMDD` release tags
+# that `desktop-build.yml` creates, pushing a container image to ghcr.io on every desktop release — not
+# wanted, and a cost. This fork does not publish a container (upstream does, at its own repo). Kept to
+# preserve upstream parity.
 on:
-  push:
-    branches: ["master"]
-    tags: ["*"]
+  workflow_dispatch: {}
 
 permissions:
   contents: read

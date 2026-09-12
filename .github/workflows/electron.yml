@@ -1,8 +1,12 @@
 name: Build Electron Releases
 
+# NOTE (fork maintainer): this is upstream's own rolling-release CI. In this REPACKAGING fork it is
+# neutralised to manual-dispatch only — the fork's desktop builds are produced by `desktop-build.yml`
+# on a cost-capped fortnightly schedule. Leaving the original `push: [master]` trigger active would fire
+# a 3-OS Electron build (billed macOS runner) and publish a `latest` prerelease on every push, which is
+# exactly the cost this fork is set up to avoid. Kept (not deleted) to preserve upstream parity.
 on:
-  push:
-    branches: ["master"]
+  workflow_dispatch: {}
 
 permissions:
   contents: write
