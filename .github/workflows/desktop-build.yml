@@ -166,11 +166,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UP_SHA: ${{ needs.check.outputs.upstream_sha }}
+          REPO: ${{ github.repository }}
         run: |
           D="$(date -u +%Y%m%d)"
           tag="build-$D"
+          # this job checks out no source, so gh has no git remote to infer from — target the repo explicitly
           # re-run safe: replace a same-day release/tag if one already exists
-          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release delete "$tag" --repo "$REPO" --cleanup-tag --yes 2>/dev/null || true
           {
             echo "Unsigned desktop repackaging of [p2r3/convert](https://github.com/p2r3/convert) (\"Convert to it!\"),"
             echo "built for the JBTheatreTools launcher. All credit to the original authors; app unmodified except for packaging."
@@ -180,6 +182,7 @@ jobs:
             echo "Assets are UNSIGNED. \`SHA256SUMS\` is signed offline afterwards by the maintainer; verify \`SHA256SUMS.minisig\` against the pinned public key."
           } > notes.md
           gh release create "$tag" flat/convert-*.zip flat/convert-*.exe flat/SHA256SUMS \
+            --repo "$REPO" \
             --title "Convert desktop — $D" \
             --notes-file notes.md \
             --target "$GITHUB_SHA"
