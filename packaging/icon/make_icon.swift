@@ -70,19 +70,21 @@ stroked([(14, 5.5), (18, 9), (14, 12.5)])    // top head
 stroked([(20, 15), (6.5, 15)])               // bottom shaft (points left)
 stroked([(10, 11.5), (6, 15), (10, 18.5)])   // bottom head
 
-// --- "CONV" wordmark — heavy white, tracked, lower band --------------------
-let text = "CONV"
+// --- "CONVERT" wordmark — heavy white, TIGHT tracking, lower band ----------
+// 7 letters, so tighten the tracking (spec: ~0.4) and let the auto-fit size them to sit
+// comfortably under the glyph without crowding the squircle edges.
+let text = "CONVERT"
 let para = NSMutableParagraphStyle(); para.alignment = .center
-var fontSize: CGFloat = 210
+var fontSize: CGFloat = 170
 var attr = NSAttributedString()
-let maxW = bgRect.width - 90
-while fontSize > 80 {
+let maxW = bgRect.width - 96
+while fontSize > 60 {
     let f = NSFont.systemFont(ofSize: fontSize, weight: .heavy)
     attr = NSAttributedString(string: text, attributes: [
         .font: f, .foregroundColor: NSColor.white, .paragraphStyle: para,
-        .kern: fontSize * 0.06])
+        .kern: fontSize * 0.01])            // tight
     if attr.size().width <= maxW { break }
-    fontSize -= 6
+    fontSize -= 4
 }
 let ts = attr.size()
 let wordCentreY: CGFloat = 300   // AppKit y of the wordmark's optical centre
