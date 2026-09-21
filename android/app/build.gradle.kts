@@ -174,6 +174,10 @@ android {
 
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(copyDistToAssets) }
+// Release builds run lintVital, whose model writer reads the generated assets dir too (Gradle refuses the
+// implicit dependency on release builds).
+tasks.matching { it.name.contains("LintVital") || it.name.startsWith("lintVital") }
+    .configureEach { dependsOn(copyDistToAssets) }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
