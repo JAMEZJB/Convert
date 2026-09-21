@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Convert" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/convert_accent</item>
+        <item name="android:windowBackground">@color/convert_background_light</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

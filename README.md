@@ -85,6 +85,47 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.override.ym
 
 The first Docker build is expected to be slow because Chromium and related system packages are installed in the build stage (needed for puppeteer in `buildCache.js`). Later builds are usually much faster due to Docker layer caching.
 
+### Android
+
+`android/` holds a minimal Android wrapper: a Kotlin/Gradle project with no native code that shows this
+project's own, unmodified web UI in a `WebView`, built from the same Vite bundle the desktop (Electron)
+target serves. It's how the JB Theatre Tools launcher installs Convert on Android; there is no separate
+Android UI or feature set — everything you see is the same site.
+
+To build the debug APK from a fresh clone:
+
+```bash
+git submodule update --init --recursive   # first checkout only
+cd android
+./gradlew assembleDebug
+```
+
+That is the whole build. Gradle's `buildWebBundle` task runs the web build itself — `npm ci` (or
+`npm install` if there is no lockfile), `tsc`, `IS_DESKTOP=true vite build`, then
+`node android/tools/build-cache.mjs` to produce `dist/cache.json` — and `copyDistToAssets` copies the
+result into the APK's assets, where it is served locally through `androidx.webkit`'s
+`WebViewAssetLoader`. **Node.js 20+ (with npm) is required**; the build stops with an explanatory error
+if `node` is not on `PATH`. The bundle is only rebuilt when `dist/` is missing or incomplete — pass
+`-PconvertRebuildBundle` to force it after changing the app's sources.
+
+`dist/cache.json` is the precomputed list of which formats each handler supports. Without it the app
+re-probes every handler on each cold start, which leaves the user waiting the better part of a minute
+behind "Loading formats…". The repo's own `bun run cache:build` does this, but requires Bun;
+`android/tools/build-cache.mjs` is the same thing for plain Node (it uses Puppeteer's Chrome, or any
+Chrome/Chromium already installed, or whatever `PUPPETEER_EXECUTABLE_PATH` points at). Building the
+cache and the material-file-icons step both need network access.
+
+`dist/`, `node_modules/` and every Android build output are gitignored — this stays a source-only
+checkout. Release builds are signed by the JB Theatre Tools suite's own CI, not from anything in this
+repository.
+
+Two notes on what the Android build does and does not do. The app holds **no Android permissions at
+all**, including no `INTERNET`: every conversion runs locally against the bundled web build. The one
+consequence is that the handlers that fetch fonts from a CDN at runtime — Typst documents and VexFlow
+music notation, both of which pull from jsdelivr — will render without those fonts. Everything else is
+fully offline. Conversion results are written to `Documents/Convert/` through `MediaStore`, streamed in
+chunks so that a large result does not have to fit in memory.
+
 ## Contributing
 
 The best way to contribute is by adding support for new file formats (duh). If you don't have a format to add but are eager to help, take a look at our issues. There are plenty of suggestions there.

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Convert's accent: #1C77FF, the theme-color the upstream page itself declares
+         (dist/index.html <meta name="theme-color">). Used for the system status bar only —
+         the WebView content is unmodified upstream UI. -->
+    <color name="convert_accent">#1C77FF</color>
+    <color name="convert_background_light">#FFFFFF</color>
+    <color name="convert_background_dark">#121212</color>
+</resources>
