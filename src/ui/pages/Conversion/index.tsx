@@ -232,7 +232,9 @@ export default function Conversion() {
     try {
       const inputFileData = [];
       for (const f of files) {
+        abortController.signal.throwIfAborted();
         const buf = await f.arrayBuffer();
+        abortController.signal.throwIfAborted();
         const bytes = new Uint8Array(buf);
 
         if (
@@ -261,6 +263,7 @@ export default function Conversion() {
         abortController.signal,
       );
 
+      abortController.signal.throwIfAborted();
       if (!output) {
         setIsConverting(false);
         setStep("select-to");
@@ -287,7 +290,7 @@ export default function Conversion() {
       openPopup();
     } catch (e) {
       console.error(e);
-      if (e instanceof DOMException && e.name === "AbortError") {
+      if (abortController.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) {
         // Don't show an error popup for manual cancellation
       } else {
         PopupData.value = {

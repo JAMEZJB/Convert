@@ -6,7 +6,8 @@ desktop program** for the JBTheatreTools launcher. It is not a new product.
 
 - **All credit for Convert goes to its original authors** (p2r3 and contributors). This fork claims **no
   authorship** of the Convert application itself.
-- The application is **unmodified except for packaging** — the desktop builds are produced from the
+- This fork includes a local cancellation reliability fix: cancelled conversions no longer publish
+  results or show conversion-failure messages. Other changes are limited to packaging; desktop builds use the
   project's *own* `desktop:*` (Electron) build targets. No features here are mine.
 - Convert is licensed **GPL-2.0**; this fork is distributed under the **same GPL-2.0 licence** (see
   [`LICENSE`](LICENSE)), with all original copyright and licence notices preserved. The full corresponding

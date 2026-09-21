@@ -96,7 +96,7 @@ async function attemptConvertPath(files: FileData[], path: ConvertPathNode[], ab
 
   const totalSteps = path.length - 1;
   for (let i = 0; i < path.length - 1; i++) {
-    if (abort?.aborted) return null;
+    if (abort?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
 
     const handler = path[i + 1].handler;
     const ctx = ProgressStore.createContext(handler.name, abort);
@@ -107,6 +107,7 @@ async function attemptConvertPath(files: FileData[], path: ConvertPathNode[], ab
       if (!handler.ready) {
         ctx.log(`Initializing ${handler.name}...`);
         await handler.init();
+        ctx.throwIfAborted();
         if (!handler.ready) throw `Handler "${handler.name}" not ready after init.`;
         if (handler.supportedFormats) {
           window.supportedFormatCache.set(handler.name, handler.supportedFormats);
@@ -137,9 +138,11 @@ async function attemptConvertPath(files: FileData[], path: ConvertPathNode[], ab
         ])
       )[0];
 
+      ctx.throwIfAborted();
       ctx.log(`Step ${i + 1}/${totalSteps} complete`);
       if (files.some((c) => !c.bytes.length)) throw "Output is empty.";
     } catch (e) {
+      ctx.throwIfAborted();
       if (e instanceof DOMException && e.name === "AbortError") {
         throw e;
       }
@@ -168,6 +171,7 @@ window.tryConvertByTraversing = async function (
   to: ConvertPathNode,
   abort?: AbortSignal,
 ) {
+  if (abort?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
   deadEndAttempts = [];
   window.traversionGraph.clearDeadEndPaths();
   for await (const path of window.traversionGraph.searchPath(
@@ -175,13 +179,15 @@ window.tryConvertByTraversing = async function (
     to,
     Mode.value === ModeEnum.Simple,
   )) {
-    if (abort?.aborted) return null;
+    if (abort?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
     if (path.at(-1)?.handler === to.handler) {
       path[path.length - 1] = to;
     }
     const attempt = await attemptConvertPath(files, path, abort);
+    if (abort?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
     if (attempt) return attempt;
   }
+  if (abort?.aborted) throw new DOMException("Conversion cancelled", "AbortError");
   return null;
 };
 
