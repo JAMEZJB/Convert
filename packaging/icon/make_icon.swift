@@ -2,10 +2,11 @@
 // This is PACKAGING CHROME ONLY (the .app/.exe + JBTheatreTools catalog tile). It does NOT
 // touch the upstream app UI — the fork is p2r3/convert "unmodified except for packaging".
 //
-// EXACT ART = the design agent's signed-off spec (bus 2026-09-12): house dark squircle
-// (#20242B, corner radius ~22.5%), a convert-⇄ glyph in azure #2F86D6 (Convert's formal owned
-// accent — it also echoes Convert's own "big blue box"), and a heavy white "CONV" wordmark in
-// the lower band. Glyph geometry transcribed 1:1 from the spec's 24-grid SVG (y flipped for AppKit).
+// EXACT ART = the design agent's signed-off spec (House Style v2, glyph-only, bus 2026-09-21):
+// house dark squircle (#20242B, corner radius ~22.5%) and a convert-⇄ glyph in azure #2F86D6
+// (Convert's formal owned accent — it also echoes Convert's own "big blue box"), centred and
+// enlarged, NO wordmark. Glyph geometry transcribed 1:1 from the spec's 24-grid SVG (y flipped
+// for AppKit). Matches SuiteDesignReview/kit/app-icons/convert/icon_1024.png pixel-for-pixel.
 // Run:  swift make_icon.swift   (make_icon.sh packages it into .icns + .ico)
 import AppKit
 
@@ -48,10 +49,12 @@ NSColor(white: 1.0, alpha: 0.06).setStroke()
 let border = NSBezierPath(roundedRect: bgRect.insetBy(dx: 2, dy: 2), xRadius: radius, yRadius: radius)
 border.lineWidth = 3; border.stroke()
 
-// --- convert-⇄ glyph (spec-exact, 24-grid) ----------------------------------
-// Map the spec's 24-unit grid into a box centred on the squircle, sitting in the upper-middle so
-// the "CONV" wordmark has the lower band. Spec y is DOWN; flip for AppKit (y up).
-let unit: CGFloat = 18.5        // px per grid unit  -> glyph box 444px
+// --- convert-⇄ glyph (spec-exact, 24-grid) — glyph-only, centred (House Style v2) ------------
+// House Style v2 icon grammar is glyph-led with NO wordmark (design 2026-09-21, rule 4/15). The
+// glyph is drawn in its original 24-grid coordinates, then centred + enlarged on the tile by a
+// single transform (design-provided: maps the glyph's measured bounds to centred on (512,512) at
+// 60% of the 824px tile; CG y-up). Spec y is DOWN; flip for AppKit (y up).
+let unit: CGFloat = 18.5        // px per grid unit
 let gcx: CGFloat = bgRect.midX  // grid centre x (u = 12)
 let gcy: CGFloat = 610          // grid centre y (v = 12), AppKit coords
 func gx(_ u: CGFloat) -> CGFloat { gcx + (u - 12) * unit }
@@ -64,34 +67,17 @@ func stroked(_ pts: [(CGFloat, CGFloat)]) {
     for q in pts.dropFirst() { p.line(to: NSPoint(x: gx(q.0), y: gy(q.1))) }
     p.lineWidth = gsw; p.lineCapStyle = .round; p.lineJoinStyle = .round; p.stroke()
 }
+ctx.saveGState()
+ctx.translateBy(x: -259.75, y: -407.46)   // design-provided: centre the glyph on (512,512)…
+ctx.scaleBy(x: 1.5073, y: 1.5073)         // …at 60% of the tile
 accent.setStroke()
 stroked([(4, 9), (17.5, 9)])                 // top shaft  (points right)
 stroked([(14, 5.5), (18, 9), (14, 12.5)])    // top head
 stroked([(20, 15), (6.5, 15)])               // bottom shaft (points left)
 stroked([(10, 11.5), (6, 15), (10, 18.5)])   // bottom head
-
-// --- "CONVERT" wordmark — heavy white, TIGHT tracking, lower band ----------
-// 7 letters, so tighten the tracking (spec: ~0.4) and let the auto-fit size them to sit
-// comfortably under the glyph without crowding the squircle edges.
-let text = "CONVERT"
-let para = NSMutableParagraphStyle(); para.alignment = .center
-var fontSize: CGFloat = 170
-var attr = NSAttributedString()
-let maxW = bgRect.width - 96
-while fontSize > 60 {
-    let f = NSFont.systemFont(ofSize: fontSize, weight: .heavy)
-    attr = NSAttributedString(string: text, attributes: [
-        .font: f, .foregroundColor: NSColor.white, .paragraphStyle: para,
-        .kern: fontSize * 0.01])            // tight
-    if attr.size().width <= maxW { break }
-    fontSize -= 4
-}
-let ts = attr.size()
-let wordCentreY: CGFloat = 300   // AppKit y of the wordmark's optical centre
-attr.draw(in: NSRect(x: bgRect.minX, y: wordCentreY - ts.height/2,
-                     width: bgRect.width, height: ts.height))
+ctx.restoreGState()
 
 NSGraphicsContext.restoreGraphicsState()
 let outURL = URL(fileURLWithPath: "icon_1024.png")
 try! rep.representation(using: .png, properties: [:])!.write(to: outURL)
-print("Wrote \(outURL.path)  (wordmark @ \(fontSize)pt)")
+print("Wrote \(outURL.path)  (glyph-only)")

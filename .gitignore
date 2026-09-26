@@ -20,3 +20,6 @@ android/.idea/
 
 # macOS finder droppings — never in a public commit
 .DS_Store
+
+# Local-only agent/maintainer notes — never in a public commit
+_private/

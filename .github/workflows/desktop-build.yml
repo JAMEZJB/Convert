@@ -129,20 +129,23 @@ jobs:
       - name: Build shared desktop bundle
         shell: bash
         run: bun run desktop:build
-      - name: Package x64 installer (required)
+      # Windows ships the `portable` target — ONE self-contained .exe that runs the app directly.
+      # (Upstream's default is an NSIS installer; a launcher that runs the asset directly would
+      # re-install on every launch, so the installer is never the shipped asset.)
+      - name: Package x64 app (required)
         shell: bash
         run: |
-          bunx electron-builder --win --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
+          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
           mkdir -p staging
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -z "$exe" ]; then echo "::error::no Windows x64 .exe produced"; ls -la release; exit 1; fi
           mv "$exe" staging/convert-Windows-x64.exe
-      - name: Package arm64 installer (optional)
+      - name: Package arm64 app (optional)
         shell: bash
         continue-on-error: true
         run: |
           rm -f release/*.exe
-          bunx electron-builder --win --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
+          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -n "$exe" ]; then mv "$exe" staging/convert-Windows-arm64.exe; else echo "arm64 build produced no .exe — skipping"; fi
       - name: List staged artifacts
