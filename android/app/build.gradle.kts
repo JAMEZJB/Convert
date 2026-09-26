@@ -8,8 +8,8 @@ plugins {
 
 // The launcher understands "build-YYYYMMDD" version names; bump this whenever the wrapper
 // or the bundled dist/ changes.
-val appVersionName = "build-20260921"
-val appVersionCode = 20260921
+val appVersionName = "build-20260926"
+val appVersionCode = 20260926
 
 // dist/ is the Vite production build of the repo root — the same bundle the desktop
 // (Electron) target serves — plus dist/cache.json, the precomputed format list. It is NOT
