@@ -11,8 +11,10 @@
 # What it builds: upstream's OWN Electron target. The build jobs check out p2r3/convert at the EXACT sha the
 # check job found and run upstream's own pipeline (Bun -> `bun install` (recursive submodules) -> upstream's
 # `desktop:build`, then electron-builder). The app is unmodified except for packaging: the only overrides are
-# electron-builder's output shape (universal mac .zip / x64 .exe) and disabling code-signing — all via CLI
-# flags, so the upstream tree itself is untouched. `built-from: <upstream sha>` in the release body is therefore
+# electron-builder's output shape (universal mac .zip / x64 .exe), the icon, disabling code-signing and skipping
+# the native-module rebuild (`npmRebuild=false`: upstream's `files` excludes node_modules, so nothing native is
+# shipped, and the rebuild otherwise needs Python + a C++ toolchain on the builder) — all via CLI flags, so
+# the upstream tree itself is untouched. `built-from: <upstream sha>` in the release body is therefore
 # always truthful, and the check job reads it back to decide "has upstream moved?".
 #
 # Output assets follow the launcher convention: convert-macOS.zip + convert-Windows-x64.exe (arm64 optional).
@@ -90,7 +92,7 @@ jobs:
         run: |
           bun run desktop:build
           bunx electron-builder --mac zip --universal --publish never \
-            -c.mac.identity=null -c.mac.icon=_pkg/packaging/icon/AppIcon.icns
+            -c.mac.identity=null -c.mac.icon=_pkg/packaging/icon/AppIcon.icns -c.npmRebuild=false
       - name: Rename to launcher convention
         run: |
           mkdir -p staging
@@ -135,7 +137,7 @@ jobs:
       - name: Package x64 app (required)
         shell: bash
         run: |
-          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
+          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false
           mkdir -p staging
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -z "$exe" ]; then echo "::error::no Windows x64 .exe produced"; ls -la release; exit 1; fi
@@ -145,7 +147,7 @@ jobs:
         continue-on-error: true
         run: |
           rm -f release/*.exe
-          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico
+          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -n "$exe" ]; then mv "$exe" staging/convert-Windows-arm64.exe; else echo "arm64 build produced no .exe — skipping"; fi
       - name: List staged artifacts
