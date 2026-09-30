@@ -11,9 +11,10 @@
 # What it builds: upstream's OWN Electron target. The build jobs check out p2r3/convert at the EXACT sha the
 # check job found and run upstream's own pipeline (Bun -> `bun install` (recursive submodules) -> upstream's
 # `desktop:build`, then electron-builder). The app is unmodified except for packaging: the only overrides are
-# electron-builder's output shape (universal mac .zip / x64 .exe), the icon, disabling code-signing and skipping
+# electron-builder's output shape (universal mac .zip / x64 .exe), the icon, disabling code-signing, skipping
 # the native-module rebuild (`npmRebuild=false`: upstream's `files` excludes node_modules, so nothing native is
-# shipped, and the rebuild otherwise needs Python + a C++ toolchain on the builder) — all via CLI flags, so
+# shipped, and the rebuild otherwise needs Python + a C++ toolchain on the builder) and, on Windows, stamping the
+# build date as the .exe's version resource (`extraMetadata.version`, see build-windows) — all via CLI flags, so
 # the upstream tree itself is untouched. `built-from: <upstream sha>` in the release body is therefore
 # always truthful, and the check job reads it back to decide "has upstream moved?".
 #
@@ -46,6 +47,8 @@ jobs:
     outputs:
       changed: ${{ steps.cmp.outputs.changed }}
       upstream_sha: ${{ steps.cmp.outputs.upstream_sha }}
+      build_date: ${{ steps.cmp.outputs.build_date }}         # YYYYMMDD — the release tag (build-YYYYMMDD)
+      win_version: ${{ steps.cmp.outputs.win_version }}       # YYYY.M.D — the same date as a Windows version number
     steps:
       - id: cmp
         env:
@@ -53,7 +56,12 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
         run: |
           up="$(gh api repos/p2r3/convert/commits/master --jq '.sha')"
-          echo "upstream_sha=$up" >> "$GITHUB_OUTPUT"
+          # one build date for the whole run, so the tag and the version stamped into the .exe always agree
+          {
+            echo "upstream_sha=$up"
+            echo "build_date=$(date -u +%Y%m%d)"
+            echo "win_version=$(date -u +%Y.%-m.%-d)"
+          } >> "$GITHUB_OUTPUT"
           # the last built upstream sha is recorded in the latest release body marker "built-from: <sha>"
           last="$(gh api repos/${{ github.repository }}/releases/latest --jq '.body' 2>/dev/null | sed -n 's/.*built-from: \([0-9a-f]\{7,\}\).*/\1/p' | head -1)"
           if [ "$FORCE" = "true" ]; then
@@ -134,10 +142,17 @@ jobs:
       # Windows ships the `portable` target — ONE self-contained .exe that runs the app directly.
       # (Upstream's default is an NSIS installer; a launcher that runs the asset directly would
       # re-install on every launch, so the installer is never the shipped asset.)
+      # Version resource: upstream's package.json says 0.0.0 (it never publishes versioned builds), so without an
+      # override the .exe's File/Product version read 0.0.0.0 in Explorer. `-c.extraMetadata.version` stamps the
+      # build date (YYYY.M.D, the same date as the build-YYYYMMDD tag) at packaging time instead; the upstream
+      # tree is untouched and the app never reads its own version.
       - name: Package x64 app (required)
         shell: bash
+        env:
+          WIN_VERSION: ${{ needs.check.outputs.win_version }}
         run: |
-          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false
+          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
+            -c.extraMetadata.version="$WIN_VERSION"
           mkdir -p staging
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -z "$exe" ]; then echo "::error::no Windows x64 .exe produced"; ls -la release; exit 1; fi
@@ -145,9 +160,12 @@ jobs:
       - name: Package arm64 app (optional)
         shell: bash
         continue-on-error: true
+        env:
+          WIN_VERSION: ${{ needs.check.outputs.win_version }}
         run: |
           rm -f release/*.exe
-          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false
+          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
+            -c.extraMetadata.version="$WIN_VERSION"
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -n "$exe" ]; then mv "$exe" staging/convert-Windows-arm64.exe; else echo "arm64 build produced no .exe — skipping"; fi
       - name: List staged artifacts
@@ -185,8 +203,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UP_SHA: ${{ needs.check.outputs.upstream_sha }}
           REPO: ${{ github.repository }}
+          BUILD_DATE: ${{ needs.check.outputs.build_date }}
         run: |
-          D="$(date -u +%Y%m%d)"
+          D="${BUILD_DATE:-$(date -u +%Y%m%d)}"   # the date the check job fixed (matches the .exe version stamp)
           tag="build-$D"
           # this job checks out no source, so gh has no git remote to infer from — target the repo explicitly
           # re-run safe: replace a same-day release/tag if one already exists
