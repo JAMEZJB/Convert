@@ -13,8 +13,8 @@
 # `desktop:build`, then electron-builder). The app is unmodified except for packaging: the only overrides are
 # electron-builder's output shape (universal mac .zip / x64 .exe), the icon, disabling code-signing, skipping
 # the native-module rebuild (`npmRebuild=false`: upstream's `files` excludes node_modules, so nothing native is
-# shipped, and the rebuild otherwise needs Python + a C++ toolchain on the builder), switching off the update feed
-# (`publish=null`, see below) and, on Windows, stamping the
+# shipped, and the rebuild otherwise needs Python + a C++ toolchain on the builder), removing the update feed
+# file from the mac zip (see build-macos) and, on Windows, stamping the
 # build date as the .exe's version resource (`extraMetadata.version`, see build-windows) — all via CLI flags, so
 # the upstream tree itself is untouched. `built-from: <upstream sha>` in the release body is therefore
 # always truthful, and the check job reads it back to decide "has upstream moved?".
@@ -100,23 +100,23 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false' # never try to discover/attach a signing cert in CI
         run: |
           bun run desktop:build
-          bunx electron-builder --mac zip --universal --publish never -c.publish=null \
+          bunx electron-builder --mac zip --universal --publish never \
             -c.mac.identity=null -c.mac.icon=_pkg/packaging/icon/AppIcon.icns -c.npmRebuild=false
-      # Update feed: upstream's package.json points electron-updater at upstream's own "latest" release, and
-      # electron-builder writes that into Contents/Resources/app-update.yml. Left in, this build would check
-      # upstream on every launch and offer upstream's download, outside the launcher's signed releases.
-      # `-c.publish=null` stops the file being written (CLI flag only, upstream source untouched); without it
-      # the app's update check finds no feed and stays quiet. This step fails the build if the file reappears.
-      - name: Check no update feed is shipped
-        run: |
-          if find release -path '*.app/Contents/Resources/app-update.yml' | grep -q .; then
-            echo "::error::app-update.yml is in the mac app; the update feed must stay off"; exit 1; fi
       - name: Rename to launcher convention
         run: |
           mkdir -p staging
           zip="$(find release -maxdepth 1 -name '*.zip' ! -name '*.blockmap' | head -1)"
           if [ -z "$zip" ]; then echo "::error::no mac .zip produced"; ls -la release; exit 1; fi
           mv "$zip" staging/convert-macOS.zip
+          # Update feed: upstream's package.json points electron-updater at upstream's own "latest" release, and
+          # electron-builder writes that into Contents/Resources/app-update.yml. Left in, this build would check
+          # upstream on launch and offer upstream's download, outside the launcher's signed releases. The file is
+          # deleted from the finished zip (the bundle is unsigned, so nothing is sealed over it; upstream source
+          # untouched); without it the app's update check finds no feed and stays quiet. (A `-c.publish=null`
+          # override fails electron-builder's config validation, so it can't be switched off at build time.)
+          zip -d staging/convert-macOS.zip '*/Contents/Resources/app-update.yml' || true
+          if unzip -l staging/convert-macOS.zip | grep -q 'Contents/Resources/app-update.yml'; then
+            echo "::error::app-update.yml is still in the mac zip; the update feed must stay off"; exit 1; fi
           ls -la staging
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -161,7 +161,7 @@ jobs:
         env:
           WIN_VERSION: ${{ needs.check.outputs.win_version }}
         run: |
-          bunx electron-builder --win portable --x64 --publish never -c.publish=null -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
+          bunx electron-builder --win portable --x64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
             -c.extraMetadata.version="$WIN_VERSION"
           mkdir -p staging
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
@@ -174,7 +174,7 @@ jobs:
           WIN_VERSION: ${{ needs.check.outputs.win_version }}
         run: |
           rm -f release/*.exe
-          bunx electron-builder --win portable --arm64 --publish never -c.publish=null -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
+          bunx electron-builder --win portable --arm64 --publish never -c.win.icon=_pkg/packaging/icon/app.ico -c.npmRebuild=false \
             -c.extraMetadata.version="$WIN_VERSION"
           exe="$(find release -maxdepth 1 -name '*.exe' | head -1)"
           if [ -n "$exe" ]; then mv "$exe" staging/convert-Windows-arm64.exe; else echo "arm64 build produced no .exe — skipping"; fi
