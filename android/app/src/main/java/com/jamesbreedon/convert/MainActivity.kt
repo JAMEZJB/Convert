@@ -10,6 +10,7 @@ import android.os.Message
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.MimeTypeMap
 import android.webkit.WebChromeClient
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
     private lateinit var assetLoader: WebViewAssetLoader
+    private val downloader = AndroidDownloader()
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -104,7 +106,7 @@ class MainActivity : ComponentActivity() {
             javaScriptCanOpenWindowsAutomatically = true
         }
 
-        webView.addJavascriptInterface(AndroidDownloader(), "AndroidDownloader")
+        webView.addJavascriptInterface(downloader, "AndroidDownloader")
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
@@ -204,6 +206,19 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    override fun onDestroy() {
+        // The page goes with the activity, so a save still in flight can never finish. Close
+        // the bridge first (every open file is closed and deleted, and later calls from the
+        // page are refused), then stop the page itself rather than leave it converting unseen.
+        downloader.close()
+        if (::webView.isInitialized) {
+            webView.stopLoading()
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.destroy()
+        }
+        super.onDestroy()
+    }
+
     private fun openExternal(url: Uri) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, url))
@@ -262,15 +277,28 @@ class MainActivity : ComponentActivity() {
      * hold the result three times over (the data: URL in the renderer, the Java String, and
      * the decoded array), so a large video would exhaust the heap. Each chunk is decoded and
      * written straight into the MediaStore output stream, so peak memory is one chunk.
+     *
+     * Every way a save can fail ends in a "Could not save …" toast: saveChunk, saveEnd and
+     * saveAbort raise it here, and the page calls saveFailed for the failures that have no
+     * session to abort (saveBegin returned "", or the result could not be read at all).
      */
     private inner class AndroidDownloader {
         private val sessions = java.util.concurrent.ConcurrentHashMap<String, SaveSession>()
         private val nextId = java.util.concurrent.atomic.AtomicLong(0)
 
-        /** Opens the destination file. Returns a session id, or "" if it could not be created. */
+        // Set by close() when the activity is destroyed. Bridge calls arrive on WebView's own
+        // thread, so one can still be in flight (or arrive later) after that.
+        @Volatile
+        private var closed = false
+
+        /**
+         * Opens the destination file. Returns a session id, or "" if it could not be created;
+         * the page then reports that to the user through saveFailed.
+         */
         @JavascriptInterface
         fun saveBegin(filename: String, mime: String): String {
             val safeName = sanitiseFilename(filename)
+            if (closed) return ""
             return try {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
@@ -285,6 +313,12 @@ class MainActivity : ComponentActivity() {
                 }
                 val id = nextId.incrementAndGet().toString()
                 sessions[id] = SaveSession(uri, stream, safeName)
+                // close() may have run while the file was being created; it would have missed
+                // this session, so drop it here instead of leaving an open, empty file.
+                if (closed) {
+                    sessions.remove(id)?.let { discard(it) }
+                    return ""
+                }
                 id
             } catch (e: Throwable) {
                 Log.e(TAG, "Could not start saving $safeName", e)
@@ -329,15 +363,44 @@ class MainActivity : ComponentActivity() {
             sessions.remove(id)?.let { abort(id, it) }
         }
 
+        /**
+         * Tells the user a save could not be done. The page calls this for the failures that
+         * never reach saveChunk/saveEnd/saveAbort, which would otherwise only be logged.
+         */
+        @JavascriptInterface
+        fun saveFailed(filename: String) {
+            toast("Could not save ${sanitiseFilename(filename)}")
+        }
+
+        /**
+         * Called from onDestroy, never by the page (deliberately not a @JavascriptInterface):
+         * closes and deletes every file still being written and refuses all later calls.
+         */
+        fun close() {
+            closed = true
+            for (id in sessions.keys.toList()) {
+                sessions.remove(id)?.let { discard(it) }
+            }
+        }
+
         private fun abort(id: String, session: SaveSession) {
             sessions.remove(id)
-            runCatching { session.stream.close() }
-            runCatching { contentResolver.delete(session.uri, null, null) }
+            discard(session)
             toast("Could not save ${session.name}")
         }
 
+        /** Closes the stream and deletes the MediaStore row, so no partial file stays behind. */
+        private fun discard(session: SaveSession) {
+            runCatching { session.stream.close() }
+            runCatching { contentResolver.delete(session.uri, null, null) }
+        }
+
         private fun toast(message: String) {
-            runOnUiThread { Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show() }
+            // Nothing to tell once the activity is gone: the user has already left the app.
+            if (closed) return
+            runOnUiThread {
+                if (!isDestroyed) Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -399,12 +462,19 @@ class MainActivity : ComponentActivity() {
                 return btoa(binary);
               }
 
+              // A failure with no save session to abort: without this the user sees nothing.
+              function reportFailed(filename) {
+                var bridge = window.AndroidDownloader;
+                if (bridge && bridge.saveFailed) bridge.saveFailed(filename);
+              }
+
               function saveBlob(blob, filename) {
                 var bridge = window.AndroidDownloader;
                 if (!bridge || !bridge.saveBegin) return Promise.resolve();
                 var id = bridge.saveBegin(filename, blob.type || 'application/octet-stream');
                 if (!id) {
                   console.error('Android save could not be started for ' + filename);
+                  reportFailed(filename);
                   return Promise.resolve();
                 }
                 var offset = 0;
@@ -469,6 +539,7 @@ class MainActivity : ComponentActivity() {
                       return saveBlob(b, filename);
                     }).catch(function(e) {
                       console.error('Android download intercept failed', e);
+                      reportFailed(filename);
                     });
                     return;
                   }

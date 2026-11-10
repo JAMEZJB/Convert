@@ -124,7 +124,20 @@ all**, including no `INTERNET`: every conversion runs locally against the bundle
 consequence is that the handlers that fetch fonts from a CDN at runtime — Typst documents and VexFlow
 music notation, both of which pull from jsdelivr — will render without those fonts. Everything else is
 fully offline. Conversion results are written to `Documents/Convert/` through `MediaStore`, streamed in
-chunks so that a large result does not have to fit in memory.
+chunks so that a large result does not have to fit in memory. A result that cannot be saved is reported
+with a short message and its part-written file is removed. Closing the app stops the page, and a save
+still in progress then is removed too rather than left half-written; the exception is Android killing
+the app outright (low memory, force stop), after which a part-written file can remain. Split-screen,
+folding and attaching a keyboard do not restart the page.
+
+The wrapper's own code has a small test that needs no device, emulator or Gradle, only Node:
+
+```bash
+node android/tools/wrapper.test.mjs
+```
+
+It runs the save script exactly as `MainActivity.kt` injects it, against a fake page and bridge, and
+checks the manifest and the activity's clean-up wiring.
 
 ## Contributing
 
