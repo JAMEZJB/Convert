@@ -6,21 +6,35 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// The launcher understands "build-YYYYMMDD" version names; bump this whenever the wrapper
-// or the bundled dist/ changes.
+// The launcher understands "build-YYYYMMDD" version names: this is the tag of the desktop
+// release the APK goes with. Bump it whenever the wrapper or the bundled web app changes.
 val appVersionName = "build-20261108"
 val appVersionCode = 20261108
 
-// dist/ is the Vite production build of the repo root — the same bundle the desktop
-// (Electron) target serves — plus dist/cache.json, the precomputed format list. It is NOT
-// committed; buildWebBundle below produces it, and copyDistToAssets copies it into the APK's
-// assets so it can be served locally via WebViewAssetLoader at
-// https://appassets.androidplatform.net/convert/…, matching the Vite `base: "/convert/"` the
-// bundle is built with.
-val repoRoot = rootProject.file("..")
-val distDir = File(repoRoot, "dist")
-val cacheJson = File(distDir, "cache.json")
-val assetsConvertDir = layout.buildDirectory.dir("generated/convertAssets/convert")
+// The web app in the APK is upstream's (p2r3/convert), unmodified, at ONE exact commit: the
+// commit the desktop release of the same tag names after "built-from:". Pass it with
+// -PupstreamSha=<sha> (or UPSTREAM_SHA in the environment); there is no default.
+// android/tools/upstream-bundle.mjs fetches that commit into a build-only folder,
+// android/build/upstream/<sha>/, runs upstream's own build there (the same commands the
+// desktop build runs) and leaves:
+//   src/dist/                 the bundle, with cache.json, the precomputed format list
+//   convert-built-from.txt    "built-from: <sha>", written only once the bundle is complete
+// Neither is committed. copyDistToAssets copies both into the APK's assets: the bundle to
+// assets/convert/, served locally via WebViewAssetLoader at
+// https://appassets.androidplatform.net/convert/…, and the note beside it as
+// assets/convert-built-from.txt, so any APK can be traced to the source it was built from.
+val upstreamSha = (findProperty("upstreamSha")?.toString() ?: System.getenv("UPSTREAM_SHA") ?: "")
+    .trim().lowercase()
+val upstreamShaGiven = Regex("[0-9a-f]{40}").matches(upstreamSha)
+// Without a usable sha this names a folder that is never created; buildWebBundle stops the
+// build before anything looks inside it.
+val upstreamDir = File(
+    rootProject.file("build/upstream"),
+    if (upstreamShaGiven) upstreamSha else "no-commit-given",
+)
+val distDir = File(upstreamDir, "src/dist")
+val builtFromFile = File(upstreamDir, "convert-built-from.txt")
+val assetsDir = layout.buildDirectory.dir("generated/convertAssets")
 
 /** Looks a command up on PATH so the build fails with advice instead of "command not found". */
 fun findOnPath(command: String): File? =
@@ -31,79 +45,60 @@ fun findOnPath(command: String): File? =
         .firstOrNull { it.isFile && it.canExecute() }
 
 val buildWebBundle by tasks.registering {
-    description = "Build the web bundle (dist/) and its format precache with npm + node."
+    description = "Fetch upstream at -PupstreamSha and build its web bundle in android/build/upstream/."
     group = "convert"
 
-    // A complete bundle is index.html + cache.json; anything less and we rebuild. Pass
-    // -PconvertRebuildBundle to force a rebuild after changing the app's own sources.
-    val forced = project.hasProperty("convertRebuildBundle")
-    outputs.upToDateWhen { !forced && File(distDir, "index.html").isFile && cacheJson.isFile }
+    // The script does nothing when this commit's bundle is already complete. Pass
+    // -PconvertRebuildBundle to make it run upstream's build again.
+    val rebuild = project.hasProperty("convertRebuildBundle")
 
     doLast {
+        if (!upstreamShaGiven) {
+            val given = if (upstreamSha.isEmpty()) "" else " (\"$upstreamSha\" is not a full 40-character sha)"
+            error(
+                "No upstream commit to build the web app from$given. Pass -PupstreamSha=<sha> " +
+                    "(or set UPSTREAM_SHA): the 40-character commit printed after \"built-from:\" " +
+                    "in the desktop release this APK is to match.",
+            )
+        }
         val node = findOnPath("node") ?: error(
-            "node was not found on PATH. The Android wrapper is a thin shell around this " +
-                "project's own web build, so Node.js (with npm) is required to produce it. " +
-                "Install Node 20+ and re-run, or build dist/ yourself and re-run Gradle.",
+            "node was not found on PATH. Node.js 20+ runs android/tools/upstream-bundle.mjs, " +
+                "which fetches upstream and runs its build. Install it and re-run.",
         )
-        val npm = findOnPath("npm") ?: error("npm was not found on PATH (it ships with Node.js).")
-        logger.lifecycle("Using node at ${node.absolutePath}")
+        val command = mutableListOf(
+            node.absolutePath,
+            rootProject.file("tools/upstream-bundle.mjs").absolutePath,
+            "--sha", upstreamSha,
+            "--dir", upstreamDir.absolutePath,
+        )
+        if (rebuild) command.add("--rebuild")
 
-        // project.exec streams the (long) npm/vite output straight to the build log; the
+        // project.exec streams the (long) build output straight to the build log; the
         // configuration cache is off for this project, which is what that requires.
-        fun run(vararg command: String, environment: Map<String, String> = emptyMap()) {
-            val result = project.exec {
-                workingDir = repoRoot
-                commandLine(*command)
-                environment.forEach { (k, v) -> this.environment(k, v) }
-                isIgnoreExitValue = true
-            }
-            if (result.exitValue != 0) {
-                error("`${command.joinToString(" ")}` failed with exit code ${result.exitValue}.")
-            }
+        val result = project.exec {
+            workingDir = rootProject.projectDir
+            commandLine(command)
+            isIgnoreExitValue = true
         }
-
-        if (!File(repoRoot, "node_modules").isDirectory) {
-            // --ignore-scripts because the postinstall hook is written for Bun; the line below
-            // runs that same script under Node instead (see android/tools/node-ts-resolve.mjs).
-            val lockfile = File(repoRoot, "package-lock.json").isFile
-            logger.lifecycle(if (lockfile) "Running npm ci…" else "Running npm install…")
-            run(npm.absolutePath, if (lockfile) "ci" else "install", "--ignore-scripts")
-            run(node.absolutePath, "--import", "./android/tools/node-ts-resolve.mjs",
-                "scripts/extract-material-icons.ts")
+        if (result.exitValue != 0) {
+            error("The upstream bundle was not built (exit code ${result.exitValue}); the reason is in the output above.")
         }
-
-        logger.lifecycle("Building dist/ (tsc + vite)…")
-        run(npm.absolutePath, "exec", "--", "tsc")
-        run(npm.absolutePath, "exec", "--", "vite", "build",
-            environment = mapOf("IS_DESKTOP" to "true"))
-
-        // Without cache.json the app re-probes every handler on each cold start, which costs
-        // the user the better part of a minute behind "Loading formats…".
-        logger.lifecycle("Building dist/cache.json (format precache)…")
-        run(node.absolutePath, "android/tools/build-cache.mjs", "dist", "dist/cache.json", "--minify")
-
-        if (!cacheJson.isFile) error("dist/cache.json was not produced.")
     }
 }
 
 val copyDistToAssets by tasks.registering(Sync::class) {
-    description = "Copy the repo-root dist/ (web bundle + format precache) into assets/convert/."
+    description = "Copy the upstream bundle and its built-from note into the APK's assets."
     group = "convert"
     dependsOn(buildWebBundle)
     doFirst {
-        require(distDir.isDirectory) {
-            "dist/ not found at ${distDir.absolutePath} — build it first from the repo root:\n" +
-                "  npm install\n" +
-                "  npx tsc && IS_DESKTOP=true npx vite build\n" +
-                "  node android/tools/build-cache.mjs dist dist/cache.json --minify"
-        }
-        require(cacheJson.isFile) {
-            "dist/cache.json is missing — the app would rebuild its format list on every " +
-                "cold start. Run: node android/tools/build-cache.mjs dist dist/cache.json --minify"
+        require(builtFromFile.isFile && File(distDir, "index.html").isFile && File(distDir, "cache.json").isFile) {
+            "No complete upstream bundle in ${upstreamDir.absolutePath}. Run the build with " +
+                "-PupstreamSha=<sha> so buildWebBundle can produce it."
         }
     }
-    from(distDir)
-    into(assetsConvertDir)
+    from(distDir) { into("convert") }
+    from(builtFromFile)
+    into(assetsDir)
 }
 
 android {

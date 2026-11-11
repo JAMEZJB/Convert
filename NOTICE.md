@@ -9,12 +9,15 @@ desktop program** for the JBTheatreTools launcher. It is not a new product.
 - The application is **unmodified except for packaging** — the desktop builds are produced from the
   project's *own* `desktop:*` (Electron) build targets. No features here are mine.
 - The `android/` directory is an additional packaging target: a minimal WebView wrapper (Kotlin/Gradle,
-  no native code) that shows this project's own unmodified web UI, built from the same Vite bundle the
-  desktop target serves. That wrapper's code (the Android project files, not the UI it displays) is
-  James Breedon's packaging work, licensed **GPL-2.0** like the rest of this fork.
+  no native code) that shows this project's own unmodified web UI, built from the same commit of the
+  original project as the desktop build of the same version. That wrapper's code (the Android project
+  files, not the UI it displays) is James Breedon's packaging work, licensed **GPL-2.0** like the rest
+  of this fork.
 - Convert is licensed **GPL-2.0**; this fork is distributed under the **same GPL-2.0 licence** (see
   [`LICENSE`](LICENSE)), with all original copyright and licence notices preserved. The full corresponding
-  source is this public repository.
+  source of a build is the original project at the commit that build names — `built-from:` in a desktop
+  release's notes, `assets/convert-built-from.txt` inside an APK — together with the packaging files in
+  this public repository.
 - This fork is **not affiliated with, nor endorsed by,** the original authors.
 - **Original project, website, issues and development:** <https://convert.to.it> ·
   <https://github.com/p2r3/convert>.

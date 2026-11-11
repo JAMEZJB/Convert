@@ -88,34 +88,47 @@ The first Docker build is expected to be slow because Chromium and related syste
 ### Android
 
 `android/` holds a minimal Android wrapper: a Kotlin/Gradle project with no native code that shows this
-project's own, unmodified web UI in a `WebView`, built from the same Vite bundle the desktop (Electron)
-target serves. It's how the JB Theatre Tools launcher installs Convert on Android; there is no separate
-Android UI or feature set — everything you see is the same site.
+project's own, unmodified web UI in a `WebView`. It's how the JB Theatre Tools launcher installs Convert
+on Android; there is no separate Android UI or feature set — everything you see is the same site.
 
-To build the debug APK from a fresh clone:
+The web app inside the APK is not built from this fork's copy of the source. Like the desktop builds, it
+is the original project ([p2r3/convert](https://github.com/p2r3/convert)) at one exact commit, built
+with that project's own build. Each desktop release here names its commit after `built-from:` in the
+release notes; an APK with the same `build-YYYYMMDD` version is built from that same commit, so the two
+hold the same app.
+
+To build the debug APK, pass that commit (all 40 characters) to Gradle:
 
 ```bash
-git submodule update --init --recursive   # first checkout only
 cd android
-./gradlew assembleDebug
+./gradlew assembleDebug -PupstreamSha=<sha>
 ```
 
-That is the whole build. Gradle's `buildWebBundle` task runs the web build itself — `npm ci` (or
-`npm install` if there is no lockfile), `tsc`, `IS_DESKTOP=true vite build`, then
-`node android/tools/build-cache.mjs` to produce `dist/cache.json` — and `copyDistToAssets` copies the
-result into the APK's assets, where it is served locally through `androidx.webkit`'s
-`WebViewAssetLoader`. **Node.js 20+ (with npm) is required**; the build stops with an explanatory error
-if `node` is not on `PATH`. The bundle is only rebuilt when `dist/` is missing or incomplete — pass
-`-PconvertRebuildBundle` to force it after changing the app's sources.
+There is no default commit: without `-PupstreamSha` (or `UPSTREAM_SHA` in the environment) the build
+stops and says so. Gradle's `buildWebBundle` task runs `android/tools/upstream-bundle.mjs`, which
 
-`dist/cache.json` is the precomputed list of which formats each handler supports. Without it the app
-re-probes every handler on each cold start, which leaves the user waiting the better part of a minute
-behind "Loading formats…". The repo's own `bun run cache:build` does this, but requires Bun;
-`android/tools/build-cache.mjs` is the same thing for plain Node (it uses Puppeteer's Chrome, or any
-Chrome/Chromium already installed, or whatever `PUPPETEER_EXECUTABLE_PATH` points at). Building the
-cache and the material-file-icons step both need network access.
+1. fetches that one commit of p2r3/convert into a build-only folder, `android/build/upstream/<sha>/src`
+   (a small git repository of its own, inside the ignored `android/build/`; this checkout's files are
+   not read or changed),
+2. runs the original project's own build there — `bun install`, then `bun run desktop:build`, the same
+   two commands the desktop build runs — which produces `dist/` with `dist/cache.json`, the precomputed
+   list of which formats each converter supports, and
+3. checks the bundle is complete and writes `android/build/upstream/<sha>/convert-built-from.txt`.
 
-`dist/`, `node_modules/` and every Android build output are gitignored — this stays a source-only
+`copyDistToAssets` then copies the bundle into the APK's assets, where it is served locally through
+`androidx.webkit`'s `WebViewAssetLoader`, and the note beside it as `assets/convert-built-from.txt`.
+`unzip -p <the apk> assets/convert-built-from.txt` shows which commit any APK was built from.
+
+**Node.js 20+, git and [Bun](https://bun.sh) are required** (the original project's build is written
+for Bun); the build stops with an explanatory error if one is missing. Fetching the commit and the
+build both need network access, and the build opens a headless Chrome to compute the format list (set
+`PUPPETEER_EXECUTABLE_PATH` to an installed Chrome if it cannot find one). A commit's bundle is built
+once and reused; pass `-PconvertRebuildBundle` to build it again. Each commit's folder under
+`android/build/upstream/` is large (it holds that commit's dependencies and build output) and can be
+deleted at any time. The script also runs on its own:
+`node android/tools/upstream-bundle.mjs --sha <sha>`.
+
+`android/build/` and every other Android build output are gitignored — this stays a source-only
 checkout. Release builds are signed by the JB Theatre Tools suite's own CI, not from anything in this
 repository.
 
@@ -130,14 +143,19 @@ still in progress then is removed too rather than left half-written; the excepti
 the app outright (low memory, force stop), after which a part-written file can remain. Split-screen,
 folding and attaching a keyboard do not restart the page.
 
-The wrapper's own code has a small test that needs no device, emulator or Gradle, only Node:
+The wrapper's own code has two small tests that need no device, emulator, Gradle, Bun or network, only
+Node and git:
 
 ```bash
 node android/tools/wrapper.test.mjs
+node android/tools/upstream-bundle.test.mjs
 ```
 
-It runs the save script exactly as `MainActivity.kt` injects it, against a fake page and bridge, and
-checks the manifest and the activity's clean-up wiring.
+The first runs the save script exactly as `MainActivity.kt` injects it, against a fake page and bridge,
+and checks the manifest and the activity's clean-up wiring. The second runs `upstream-bundle.mjs`
+against throwaway git repositories standing in for the original project: the bundle comes from exactly
+the commit given, a missing or shortened commit stops the build, and nothing outside the build-only
+folder is touched.
 
 ## Contributing
 

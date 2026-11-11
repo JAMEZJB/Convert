@@ -37,12 +37,12 @@ import java.io.OutputStream
  * UI is not modified in any way; the only app code here is this activity plus the tiny
  * download bridge below (AndroidDownloader).
  *
- * The bundle is served from app assets (assets/convert/, copied from dist/ at build time)
- * through WebViewAssetLoader at https://appassets.androidplatform.net/convert/…, which is
- * what the Vite `base: "/convert/"` config expects. Every response gets the same
- * Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers the desktop's Electron
- * protocol handler (src/electron.cjs) injects, so the SharedArrayBuffer-dependent wasm
- * converters (ffmpeg, sqlite, etc.) keep working.
+ * The bundle is served from app assets (assets/convert/, copied from upstream's dist/ at
+ * build time) through WebViewAssetLoader at https://appassets.androidplatform.net/convert/…
+ * (the bundle's own URLs are relative, so it runs from that folder). Every response gets
+ * the same Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers the desktop's
+ * Electron protocol handler (src/electron.cjs) injects, so the SharedArrayBuffer-dependent
+ * wasm converters (ffmpeg, sqlite, etc.) keep working.
  */
 class MainActivity : ComponentActivity() {
 
