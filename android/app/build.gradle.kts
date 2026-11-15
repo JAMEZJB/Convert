@@ -8,8 +8,8 @@ plugins {
 
 // The launcher understands "build-YYYYMMDD" version names: this is the tag of the desktop
 // release the APK goes with. Bump it whenever the wrapper or the bundled web app changes.
-val appVersionName = "build-20261108"
-val appVersionCode = 20261108
+val appVersionName = "build-20261115"
+val appVersionCode = 20261115
 
 // The web app in the APK is upstream's (p2r3/convert), unmodified, at ONE exact commit: the
 // commit the desktop release of the same tag names after "built-from:". Pass it with
